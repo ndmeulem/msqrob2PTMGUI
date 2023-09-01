@@ -1,0 +1,791 @@
+---
+title: "Dynamic Report for differential abundance or usage analysis in MS-based proteomics using the msqrob2ptmgui App"
+author: "msqrob2ptmgui"
+date: "Developed by [statOmics](https://statomics.github.io)"
+output:
+    html_document:
+      code_download: true
+      theme: cosmo
+      toc: true
+      toc_float: true
+      highlight: tango
+      number_sections: true
+    pdf_document:
+      toc: true
+      number_sections: true
+linkcolor: blue
+urlcolor: blue
+citecolor: blue
+---
+
+<a rel="license" href="https://creativecommons.org/licenses/by-nc-sa/4.0"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-nc-sa/4.0/88x31.png" /></a>
+
+
+# Background
+Describe data here. 
+
+The following packages are needed for this report 
+
+```{r, warning=FALSE, message=FALSE}
+library(QFeatures)
+library(tidyverse)
+library(DT)
+library(ggplot2)
+library(plotly)
+library(limma)
+library(msqrob2)
+library(dplyr)
+```
+
+# Input parameters copied from msqrob2gui
+
+Initialize all input parameters used in the GUI. 
+
+## Input tab
+
+```{r}
+{{inputfiles}}
+```
+
+Specification of peptides file, optional non-enriched file and annotation file. Note that the intensity file(s) and the annotation file are copied to the zip file for the report and are named
+intensity.txt (intensity_nonenriched.txt) and annotationFile.csv, respectively. 
+
+```{r}
+{{inputparameters}}
+```
+
+```{r}
+if (input_example == T){
+  intensityIdentifier = "2021"
+  skip = 0
+  separator = ","
+  annotationSep = ","
+  sequenceColumn = 2
+  modificationsColumn = 3
+  modificationSplit = "|"
+  proteinColumn = 1
+}
+```
+
+
+## Preprocessing tab
+
+```{r}
+{{preprocessing}}
+```
+
+- Log transformation: logTrans=`r logTrans`.
+- Peptides that are picked up in less than minObsFeat=`r minObsFeat` are removed
+- The features are normalised using normMethod=`r normMethod` 
+
+
+## summarisation tab
+
+```{r}
+{{summarization}}
+```
+
+The features are summarised according to ptm level using robust regression: 
+`r summarisation`. 
+
+
+## Model tab
+
+```{r}
+{{model}}
+```
+
+- The data are modelled using the following formula: form=`r formula`
+
+## Inference tab
+
+```{r}
+{{inference}}
+```
+
+- The statistical test assesses the null hypothesis specified using the following contrast for each summarised features: `r contrast`.
+- summarised features are returned as significant using the $\alpha=`r sigLevel`$ FDR-level.
+
+
+## Report Tab
+
+```{r}
+{{report}}
+``` 
+
+In the report the `r selectedFeature` feature will be plotted in detail-plots.
+
+# Data import 
+
+We first import the data from the intensityFile.txt file. This is the file containing
+your raw Feature-level intensities. 
+
+To import the data we use the `QFeatures` package.
+
+```{r}
+df <- read.delim(intensityFile, skip = skip,
+                 sep = separator, header = T)
+df$peptidoform <- paste(df[,sequenceColumn],
+                        df[,modificationsColumn], sep = "_")
+#Get intensity columns
+ecols <- grep(intensityIdentifier,
+              names(df))
+
+#Read in peptides intensity file into QFeatures object
+pe <- readQFeatures(df,
+                    ecol = ecols,
+                    name = "peptideRaw",
+                    fnames = "peptidoform")
+pe
+```
+
+If there is a non-enriched counterpart dataset, we also read in that one
+
+
+```{r}
+if (protein_included == TRUE){
+  df_prot <- read.delim(proteinFile, skip = proteinskip,
+                                sep = proteinseparator, header = T)
+  #Get intensity columns
+  ecols_prot <- grep(proteinintensityIdentifier,
+                names(df_prot))
+
+  #Read in peptides intensity file into QFeatures object
+  prot <- readQFeatures(df_prot,
+                      ecol = ecols_prot,
+                      name = "proteinRaw")
+}
+```
+
+
+In the following code chunk, we set-up the colData with the information on the design.
+
+- The file path to the annotation data is `r annotationFile`
+
+```{r}
+metadataFile <- read.delim(annotationFile,
+                            sep = annotationSep)
+
+#Make coldata for the pe object based on metadatafile
+idcols <- colnames(metadataFile)[2:length(colnames(metadataFile))]
+for (col in idcols){
+    colData(pe)[as.character(col)] <- as.factor(metadataFile[[as.character(col)]])
+}
+
+colData(pe)
+```
+
+# Preprocessing
+
+This section performs the preprocessing. 
+This includes 
+
+- log transformation, 
+- filtering and 
+- summarisation of the data.
+
+## Log-transformation
+
+We calculate how many non zero intensities we have per feature and this
+will be useful for filtering.
+
+```{r}
+rowData(pe[["peptideRaw"]])$nNonZero <- rowSums(assay(pe[["peptideRaw"]]) > 0, na.rm = T)
+if (protein_included == T){
+  rowData(prot[["proteinRaw"]])$nNonZero <- rowSums(assay(prot[["proteinRaw"]]) > 0, na.rm = T)
+}
+```
+
+
+features with zero intensities are missing features and should be represent
+with an `NA` value rather than `0`.
+```{r}
+pe <- zeroIsNA(pe, "peptideRaw") # convert 0 to NA
+if (protein_included == T){
+  prot <- zeroIsNA(prot, "proteinRaw")
+}
+```
+
+`r format(mean(is.na(assay(pe[["peptideRaw"]])))*100,digits=2)`% of all feature
+intensities are missing and for some features we do not even measure a signal
+in any sample.
+
+If logarithmic transformation is selected, the assay will be logtransformed
+
+```{r}
+#with which base is logtransformation selected?
+logTrans
+```
+
+```{r}
+if(logTrans != "none") {
+  pe <- logTransform(pe, base = as.numeric(logTrans), i = "peptideRaw", name = "peptideLog")
+  if(protein_included == T){
+    prot <- logTransform(prot, base = as.numeric(logTrans),
+                              i = "proteinRaw", name = "proteinLog")
+  }
+}
+
+#If no logtransformation is selected, we assume it has already been logtransformed
+if(logTrans == "none") {
+  pe <- addAssay(pe, pe[["peptideRaw"]], "peptideLog")
+  if (protein_included == T){
+    prot <- addAssay(prot, prot[["proteinRaw"]], "proteinLog")
+  }
+}
+```
+
+
+## Filtering
+
+Drop features that were only identified in less than `r minObsFeat` samples
+
+
+```{r}
+#filter on number of nonzero columns
+pe <- pe[rowData(pe[["peptideLog"]])$nNonZero>=minObsFeat,,]
+if(protein_included == T){
+  prot <- prot[rowData(prot[["proteinLog"]])$nNonZero>=minObsFeat,,]
+}
+```
+
+
+We keep `r nrow(pe[["peptideLog"]])` features upon filtering.
+
+
+## Normalise the data 
+
+The data are normalised using the `r normMethod` method (If normMethod is "none" no normalisation is performed). 
+
+```{r}
+normMethod
+```
+
+```{r message=FALSE, warning=FALSE}
+protein_column <- colnames(rowData(pe[["peptideLog"]]))[proteinColumn]
+#Normalisation
+if (normMethod == "robust"){
+  #If normalisation against protein is chosen, I do need to normalise against
+  #technical variation as well, I typically use median centering for that
+  pe <- normalize(pe,
+                   i = "peptideLog",
+                   name = "peptideNorm",
+                   method = "center.median")
+  if(protein_included == T){
+    prot <- normalize(prot,
+                     i = "proteinLog",
+                     name = "proteinNorm",
+                     method = "center.median")
+    prot <- aggregateFeatures(prot,
+                              i = "proteinNorm",
+                              fcol = colnames(rowData(prot[["proteinLog"]]))[proteinproteinColumn],
+                              na.rm = T,
+                              name = "proteinRobust",
+                              fun = MsCoreUtils::robustSummary)
+    pe <- addAssay(pe, prot[["proteinRobust"]], "proteinRobust")
+
+  }else{pe <- aggregateFeatures(pe,
+                                 i = "peptideNorm",
+                                 fcol = protein_column,
+                                 na.rm = TRUE,
+                                 name = "proteinRobust",
+                                 fun = MsCoreUtils::robustSummary)
+  }
+
+
+  #Do not change pe yet, gives problems further down the line
+  #browser()
+  #Normalisation step: subtract protein value from corresponding pepform value
+  if(protein_included == T){
+    #Only take pepforms that have a parent protein
+    pepWithProtein <- rowData(pe[["peptideNorm"]])[[proteinColumn]] %in%
+                            rownames(prot[["proteinRobust"]])
+    pePepWithProtein  <- pe[["peptideNorm"]][pepWithProtein,]
+    pe <- addAssay(pe,pePepWithProtein,"peptideLogNorm")
+  }else{pe <- addAssay(pe,pe[["peptideNorm"]],"peptideLogNorm")}
+
+  assay(pe[["peptideLogNorm"]]) <- assay(pe[["peptideLogNorm"]]) -
+    assay(pe[["proteinRobust"]])[rowData(pe[["peptideLogNorm"]])[[proteinColumn]],
+                                  colnames(assay(pe[["peptideLogNorm"]]))]
+  #Filter out peptidoforms that now have only NA or 0 intensities
+  filtering <- rowSums(is.na(assay(pe[["peptideLogNorm"]])) |
+                         assay(pe[["peptideLogNorm"]])==0) != ncol(assay(pe[["peptideLogNorm"]]))
+  pe[["peptideLogNorm"]] <- pe[["peptideLogNorm"]][filtering,]
+} else if (normMethod != "none"){
+  pe <- normalize(pe,
+                  i = "peptideLog",
+                  name = "peptideLogNorm",
+                  method = normMethod)
+} else if (normMethod == "none"){
+  #I do continue with the name peptideLognorm, so I will have to add this
+  #in this case as well, it is then just unnormalised
+  pe <- addAssay(pe, pe[["peptideLog"]], "peptideLogNorm")
+}
+```
+
+
+
+## Summarisation 
+
+The data are optionally summarised into PTM level via robust regression.
+Data summarised: `r summarisation`
+
+```{r}
+ if (summarisation == "yes"){
+      #ptm is the form of protein + modification + location (in the protein)
+      #so add ptm column
+      rowData(pe[["peptideLogNorm"]])$ptm <- mapply(function(x, y) {
+      vector2 <- strsplit(y, paste0("\\",modificationSplit))[[1]]
+      result <- lapply(vector2, function(i) paste(x, i, sep = "__"))
+      final_result <- paste(unlist(result), collapse = ", ")
+    }, rowData(pe[["peptideLogNorm"]])[[proteinColumn]],
+    rowData(pe[["peptideLogNorm"]])[[modificationsColumn]])
+      #Get all unique PTMs
+      ptms <- unique(unlist(strsplit(rowData(pe[["peptideLogNorm"]])$ptm, split = ", ", fixed = TRUE)))
+
+      #For each ptm do
+      ptm_x_assay <- sapply(unique(ptms), function(i){
+
+        ptm_sub <- filterFeatures(pe,~grepl(ptm,pattern=i,fixed = T))[["peptideLogNorm"]]
+        #Get intensity values of those peptidoforms
+        z <- assay(ptm_sub)
+        z <- filter(as.data.frame(z), rowSums(is.na(z) | z==0) != ncol(z))
+        #And summarise them to 1 row of intensity values: 1 value per sample for that ptm
+        ptm_y <- try(MsCoreUtils::robustSummary(as.matrix(z)), silent = T)
+        if (is(ptm_y, "try-error"))
+        {ptm_y <- matrix(rep(NA,ncol(ptm_sub)), nrow = 1,
+                         dimnames = list(c(i), c(colnames(ptm_sub))))}
+
+        ptm_y
+      })
+      #Then we get the intensity assay on ptm level
+      ptm_x_assay <- t(ptm_x_assay)
+
+      #Filter out ptms that have too many missing values
+      filtering <- (rowSums(ptm_x_assay != 0, na.rm=TRUE)) > 0 &
+        (rowSds(ptm_x_assay, na.rm=TRUE) > 1e-4) &
+        (rowSums(is.na(ptm_x_assay)) < (ncol(ptm_x_assay)-1))
+      ptm_x_assay <- ptm_x_assay[filtering,]
+      colnames(ptm_x_assay) <- colnames(assay(pe[["peptideLogNorm"]]))
+      #Add to QFeatures object
+      rowdata <- data.frame(ptm = rownames(ptm_x_assay))
+      rowdata[[protein_column]] <- sapply(str_split(rowdata$ptm, pattern="_"),
+                                                function(x) x[1])
+      ptm_y_assay <- SummarizedExperiment(assays=as.matrix(ptm_x_assay),
+                                          rowData=rowdata, colData=colData(pe)[colnames(ptm_x_assay),])
+      pe <- addAssay(pe, ptm_y_assay, "ptmRel")
+  }
+```
+
+
+
+## Explore normalised/summarised data
+
+```{r, fig.height=8, fig.width=12}
+assay_pe_long <- assay(pe[["peptideLogNorm"]]) %>%
+  as_tibble() %>%
+  pivot_longer(cols = everything(), names_to = "sample", values_to = "intensity")
+#set the colour palette
+pal <- wesanderson::wes_palette("Darjeeling1",
+                                length(unique(assay_pe_long$sample)),
+                                type = "continuous")
+#Density plot
+
+  p1 <- try(ggplot(assay_pe_long, aes(x=intensity, color=sample)) +
+    geom_density(show.legend = F) +
+    scale_colour_manual(values = pal))
+  # p1 <- try(ggplotly(p1) %>% layout(showlegend=F) %>%
+  #   config(toImageButtonOptions = list(
+  #     format = "png", filename = "densityplot_after", width = 1920, height = 1080
+  #   )))
+
+try(plot(p1))
+```
+
+
+
+```{r, fig.height=8, fig.width=12}
+p2 <- ggplot(assay_pe_long, aes(x = sample, y=intensity, color=sample)) +
+    geom_boxplot(show.legend = F) +
+    scale_color_manual(values=pal)+
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1, size =10))
+plot(p2)
+```
+
+
+We can visualize our data using a Multi Dimensional Scaling plot,
+eg. as provided by the `limma` package.
+
+```{r, fig.height=8, fig.width=12}
+pe[["peptideLogNorm"]] %>% 
+  assay %>%
+  limma::plotMDS() 
+```
+
+The first axis in the plot is showing the leading log fold changes
+(differences on the log scale) between the samples.
+
+An MDS plot of the summarised features can be found below. 
+
+```{r, fig.height=8, fig.width=12}
+if (summarisation == "yes"){
+ plotMDS(assay(pe[["ptmRel"]]))}
+```
+
+# Data Analysis
+
+## Estimation
+
+We model the summarised feature level expression values using `msqrob`.
+By default `msqrob2` estimates the model parameters using robust regression.
+
+We will model the data using following formula
+
+```{r}
+as.formula(formula)
+```
+
+```{r, warning=FALSE}
+pe <- msqrob(object = pe, i = "peptideLogNorm", formula = stats::as.formula(formula), robust = robustRegression)
+if(summarisation == "yes"){
+  pe <- msqrob(object = pe, i = "ptmRel", formula = stats::as.formula(formula), robust = robustRegression)
+}
+```
+
+## Inference
+
+We can also explore the design of the model that we specified using the package `ExploreModelMatrix` 
+
+```{r}
+library(ExploreModelMatrix)
+
+if (any(grepl("\\|",attr(terms(as.formula(formula)), "term.labels")))){
+        visDesign <- VisualizeDesign(colData(pe),update(as.formula(formula), as.formula(paste("~. -",paste0("(",attr(terms(as.formula(formula)), "term.labels")[grepl("\\|", attr(terms(as.formula(formula)), "term.labels"))], ")")))))
+} else {
+        visDesign <- VisualizeDesign(colData(pe),formula)
+}
+
+visDesign$plotlist
+```
+
+The following contrast will be assessed for each summarised feature:
+
+```{r}
+contrast
+```
+
+```{r}
+parameter_names <- colnames(visDesign[[3]])
+
+L <- makeContrast(
+  contrast, 
+  parameterNames = parameter_names
+  )
+
+pe <- hypothesisTest(object = pe, i = "peptideLogNorm", contrast = L)
+
+if (summarisation == "yes") {
+  pe <- hypothesisTest(object = pe, i = "ptmRel", contrast = L, overwrite = TRUE)
+      }
+```
+
+The following features are significant at the `r sigLevel` FDR-level.
+
+Peptidoform level:
+```{r}
+rowData(pe[["peptideLogNorm"]])[,colnames(L)] %>% 
+  arrange(pval) %>% 
+  filter(adjPval < sigLevel) %>% 
+  DT::datatable() %>% 
+  DT::formatSignif(columns = 1:6,digits=3)
+```
+
+
+PTM level: (if summarisation was performed)
+```{r}
+if (summarisation == "yes"){
+  rowData(pe[["ptmRel"]])[,colnames(L)] %>% 
+  arrange(pval) %>% 
+  filter(adjPval < sigLevel) %>% 
+  DT::datatable() %>% 
+  DT::formatSignif(columns = 1:6,digits=3)}
+```
+
+## Plots
+
+### Volcano-plot
+
+The FDR is controlled at the `r sigLevel`. 
+
+
+```{r}
+rowData(pe[["peptideLogNorm"]])$pepform <- try(paste(
+                      rowData(pe[["peptideLogNorm"]])[,sequenceColumn],
+                      rowData(pe[["peptideLogNorm"]])[,modificationsColumn]))
+p1 <- try(rowData(pe[["peptideLogNorm"]])[, colnames(L)] %>%
+          ggplot(aes(x = logFC, y = -log10(pval),
+                     color = adjPval <= sigLevel,
+                     annotation = rowData(pe[["peptideLogNorm"]])[, "pepform"])) +
+          geom_point(cex = 2.5) +
+          scale_color_manual(values = alpha(c("black", "red"), 0.5)) +
+          theme_minimal() +
+          ylab("-log10(pvalue)") +
+          ggtitle(contrast))
+try(plotly::ggplotly(p1)) 
+```
+
+
+```{r,warning=FALSE}
+if (summarisation == "yes"){
+p1 <- try(rowData(pe[["ptmRel"]])[, colnames(L)] %>%
+          ggplot(aes(x = logFC, y = -log10(pval),
+                     color = adjPval <= sigLevel,
+                     annotation = rowData(pe[["ptmRel"]])[, "ptm"])) +
+          geom_point(cex = 2.5) +
+          scale_color_manual(values = alpha(c("black", "red"), 0.5)) +
+          theme_minimal() +
+          ylab("-log10(pvalue)") +
+          ggtitle(contrast))
+try(plotly::ggplotly(p1)) 
+}
+```
+
+### Detail plots
+
+We first extract the normalised rawFeatures expression values for a particular summarised feature.
+You selected `maxPlot`=`r maxPlot` so  detail plots are constructed for the `r maxPlot` most significant summarised features that are DA at the specified FDR level of `r sigLevel`. 
+Note, that you can increase `maxPlot` to generate more plots. 
+
+
+```{r}
+maxPlot
+```
+
+```{r}
+sigNames <- rowData(pe[["peptideLogNorm"]])[,colnames(L)] %>%
+  rownames_to_column("feature") %>%
+  arrange(pval) %>% 
+  filter(adjPval<sigLevel) %>%
+  pull(feature)
+```
+
+
+Peptidoform level 
+```{r, warning=FALSE, message=FALSE, fig.height=8, fig.width=12}
+lineplots <- list()
+i = 1
+if (length(sigNames) > maxPlot) 
+  plotNames <- sigNames[1:maxPlot] else 
+    plotNames <- sigNames
+if (length(plotNames) >= 1) for (feature_selected in plotNames){
+        pep <- feature_selected
+        prot <- rowData(pe[["peptideLogNorm"]])[pep,proteinColumn]
+        
+        #get protein value by aggregating subset
+        pe_sub_prot <- pe[["peptideLog"]][rowData(pe[["peptideLog"]])[[protein_column]] == prot,]
+        pe_sub_prot <- aggregateFeatures(pe_sub_prot,
+                                 i = "peptideLog",
+                                 fcol = protein_column,
+                                 na.rm = TRUE,
+                                 name = "proteinLog",
+                                 fun = MsCoreUtils::robustSummary)
+
+        protein <- assay(pe_sub_prot) %>% as.data.frame() %>% pivot_longer(
+          cols = colnames(assay(pe_sub_prot)), values_to = "LogIntensities",
+          names_to = "run"
+        ) %>% mutate(type = "protein", sequence = prot)
+
+        #peptidoform abundance
+        pepform <- assay(pe[["peptideLog"]])[pep,] %>% as.data.frame()
+        if (length(pep)>1){
+          pepform <- pepform %>% rownames_to_column("sequence") %>%
+            pivot_longer(cols = colnames(pepform), names_to = "run",
+                         values_to = "LogIntensities") %>%
+            mutate(type = "pepform -log")
+        } else{
+          colnames(pepform) <- "LogIntensities"
+          pepform <- pepform %>% rownames_to_column("run") %>%
+            mutate(sequence = pep, type = "pepform -log")
+        }
+        #peptidoform abundance - normalised
+        pepform_norm <- assay(pe[["peptideLogNorm"]])[pep,] %>% as.data.frame()
+        if (length(pep)>1){
+          pepform_norm <- pepform_norm %>% rownames_to_column("sequence") %>%
+            pivot_longer(cols = colnames(pepform_norm), names_to = "run",
+                         values_to = "LogIntensities")
+        } else{
+          colnames(pepform_norm) <- "LogIntensities"
+          pepform_norm <- pepform_norm %>% rownames_to_column("run") %>%
+            mutate(sequence = pep)
+        }
+        pepform_norm <- pepform_norm %>% mutate(type = "pepform - norm",
+                            sequence = paste(sequence, "norm"))
+
+        df_plot <- rbind(protein, pepform, pepform_norm)
+
+        colH <- colData(pe)
+
+        for (col in idcols){
+          df_plot[as.character(col)] = as.factor(colH[df_plot$run, col])
+        }
+        #add id column
+        df_plot <- df_plot %>% as_tibble() %>%
+          tidyr::unite("id", all_of(idcols),sep="_", remove = F)
+
+          colour_values <- c("pepform - norm" = "seagreen3",
+                             "protein" = "dodgerblue2",
+                             "pepform -log" = "palevioletred2")
+          
+        if(length(idcols) == 1 ){
+          df_plot <- df_plot %>% arrange(!!sym(x_axis1))}
+        else if(length(idcols) == 2 ){
+          df_plot <- df_plot %>% arrange(!!sym(x_axis1), !!sym(x_axis2))
+        }
+        else if(length(idcols) > 2){
+          df_plot <- df_plot %>%
+            arrange(!!sym(x_axis1), !!sym(x_axis2), !!sym(x_axis3))
+        }
+        df_plot$id <- forcats::fct_inorder(df_plot$id)
+
+        try(p1 <-  df_plot %>% ggplot() +
+          geom_line(aes(x = id, y = LogIntensities, group = sequence,
+                        color = type), size = 1) +
+          geom_point(aes(x = id, y = LogIntensities , group = sequence,
+                         color = type), size = 2.5) +
+          scale_colour_manual(values = colour_values)  +
+          labs(title = feature_selected, x = "BioReplicate", y = "LogIntensity") +
+          theme_bw() +
+           theme(axis.text.x = element_text(angle = 60, hjust=1)))
+
+        plot(p1)
+        
+} else cat("No plots are generated because there are no significant summarised features at the", sigLevel, "FDR level")
+```
+
+PTM level
+```{r}
+if(summarisation == "yes"){
+  sigNames <- rowData(pe[["ptmRel"]])[,colnames(L)] %>%
+  rownames_to_column("feature") %>%
+  arrange(pval) %>% 
+  filter(adjPval<sigLevel) %>%
+  pull(feature)}
+```
+
+```{r, warning=FALSE, message=FALSE, fig.height=8, fig.width=12}
+if (summarisation == "yes"){
+  if (length(sigNames) > maxPlot) 
+  plotNames <- sigNames[1:maxPlot] else 
+    plotNames <- sigNames
+if (length(plotNames) >= 1) for (feature_selected in plotNames){
+        prot <- strsplit(feature_selected, "__")[[1]][1]
+        pep <- rowData(pe[["peptideLogNorm"]]) %>% as.data.frame() %>%
+          filter(grepl(feature_selected, ptm, fixed=T)) %>% rownames
+        pepform_table <- rowData(pe[["peptideLogNorm"]])[grepl(feature_selected,
+                        rowData(pe[["peptideLogNorm"]])$ptm, fixed = T),] %>%
+                  as.data.frame() %>% select(starts_with(gsub("\\s*=\\s*0", "", contrast)))
+       try(pepform_table <- pepform_table %>% arrange(!!sym(paste(gsub("\\s*=\\s*0", "", contrast), "adjPval", sep = "."))))
+        
+        #get protein value by aggregating subset
+        pe_sub_prot <- pe[["peptideLog"]][rowData(pe[["peptideLog"]])[[protein_column]] == prot,]
+        pe_sub_prot <- aggregateFeatures(pe_sub_prot,
+                                 i = "peptideLog",
+                                 fcol = protein_column,
+                                 na.rm = TRUE,
+                                 name = "proteinLog",
+                                 fun = MsCoreUtils::robustSummary)
+
+        protein <- assay(pe_sub_prot) %>% as.data.frame() %>% pivot_longer(
+          cols = colnames(assay(pe_sub_prot)), values_to = "LogIntensities",
+          names_to = "run"
+        ) %>% mutate(type = "protein", sequence = prot)
+
+        #peptidoform abundance
+        pepform <- assay(pe[["peptideLog"]])[pep,] %>% as.data.frame()
+        if (length(pep)>1){
+          pepform <- pepform %>% rownames_to_column("sequence") %>%
+            pivot_longer(cols = colnames(pepform), names_to = "run",
+                         values_to = "LogIntensities") %>%
+            mutate(type = "pepform -log")
+        } else{
+          colnames(pepform) <- "LogIntensities"
+          pepform <- pepform %>% rownames_to_column("run") %>%
+            mutate(sequence = pep, type = "pepform -log")
+        }
+        #peptidoform abundance - normalised
+        pepform_norm <- assay(pe[["peptideLogNorm"]])[pep,] %>% as.data.frame()
+        if (length(pep)>1){
+          pepform_norm <- pepform_norm %>% rownames_to_column("sequence") %>%
+            pivot_longer(cols = colnames(pepform_norm), names_to = "run",
+                         values_to = "LogIntensities")
+        } else{
+          colnames(pepform_norm) <- "LogIntensities"
+          pepform_norm <- pepform_norm %>% rownames_to_column("run") %>%
+            mutate(sequence = pep)
+        }
+        pepform_norm <- pepform_norm %>% mutate(type = "pepform - norm",
+                            sequence = paste(sequence, "norm"))
+        #ptm abundance - normalised
+          ptm_df <- assay(pe[["ptmRel"]])[feature_selected,] %>% as.data.frame()
+          colnames(ptm_df) <- "LogIntensities"
+          ptm_df <- ptm_df %>%
+            rownames_to_column("run") %>% mutate(type = "ptm",
+                                                 sequence = feature_selected)
+        
+
+          df_plot <- rbind(protein, pepform, pepform_norm, ptm_df)
+          
+          sign_pepforms <- try(pepform_table %>% filter(
+            !!sym(paste(gsub("\\s*=\\s*0", "", contrast), "adjPval",
+                        sep = ".")) <= sigLevel
+          ) %>% rownames %>% paste("norm"))
+          df_plot[df_plot$sequence==sign_pepforms,]$type = "pepform - norm - significant"
+
+
+        colH <- colData(pe)
+
+        for (col in idcols){
+          df_plot[as.character(col)] = try(as.factor(colH[df_plot$run, col]))
+        }
+        #add id column
+        df_plot <- try(df_plot %>% as_tibble() %>%
+          tidyr::unite("id", all_of(idcols),sep="_", remove = F))
+
+        colour_values <- c("pepform - norm" = "gray72",
+                           "pepform - norm - significant" = "pink",
+                           "protein" = "dodgerblue2", "ptm" = "seagreen3",
+                           "pepform -log" = "grey44")
+
+        if(length(idcols) == 1 ){
+          df_plot <- df_plot %>% arrange(!!sym(x_axis1))}
+        else if(length(idcols) == 2 ){
+          df_plot <- df_plot %>% arrange(!!sym(x_axis1), !!sym(x_axis2))
+        }
+        else if(length(idcols) > 2){
+          df_plot <- df_plot %>%
+            arrange(!!sym(x_axis1), !!sym(x_axis2), !!sym(x_axis3))
+        }
+        df_plot$id <- try(forcats::fct_inorder(df_plot$id))
+
+        try(p1 <-  df_plot %>% ggplot() +
+          geom_line(aes(x = id, y = LogIntensities, group = sequence,
+                        color = type), size = 1) +
+          geom_point(aes(x = id, y = LogIntensities , group = sequence,
+                         color = type), size = 2.5) +
+          scale_colour_manual(values = colour_values)  +
+          labs(title = feature_selected, x = "BioReplicate", y = "LogIntensity") +
+          theme_bw() +
+           theme(axis.text.x = element_text(angle = 60, hjust=1))
+)
+
+        plot(p1)
+} else cat("No plots are generated because there are no significant summarised features at the", sigLevel, "FDR level")}
+```
+
+# Session Info
+
+With respect to reproducibility, it is highly recommended to include a session info in your script so that readers of your output can see your particular setup of R. 
+
+```{r}
+sessionInfo()
+```

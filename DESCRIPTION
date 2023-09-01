@@ -1,0 +1,15 @@
+Package: msqrob2PTMGUI
+Type: Package
+Title: Differential abundance and usage analysis at PTM level
+Version: 0.1.0
+Author: Nina Demeulemeester
+Maintainer: The package maintainer <nina.demeulemeester@ugent.be>
+Description: This package will launch a shiny app that contains all functionalities of msqrob2PTM.
+Depends: R (>= 4.1), tidyverse, QFeatures, shiny, shinyhelper, shinybusy, shinyWidgets, DT, ggplot2, limma, plotly, msqrob2, knitr, rmarkdown, wesanderson, shinyjs, shinymeta, BiocManager, ExploreModelMatrix, forcats, MsCoreUtils 
+biocViews:
+License: Artistic-2.0
+Encoding: UTF-8
+LazyData: true
+RoxygenNote: 7.2.3
+Suggests: 
+    testthat (>= 3.0.0)
