@@ -353,7 +353,9 @@ server <- (function(input, output, session) {
           #For each ptm do
           ptm_x_assay <- sapply(unique(ptms), function(i){
 
-            ptm_sub <- filterFeatures(pe2,~grepl(ptm,pattern=i,fixed = T))[["peptideLogNorm"]]
+            #ptm_sub <- filterFeatures(pe2,~grepl(ptm,pattern=i,fixed = T))[["peptideLogNorm"]]
+            ptm_sub <- pe2[["peptideLogNorm"]][grepl(rowData(pe2[["peptideLogNorm"]])$ptm, pattern = i, fixed = T),]
+            
             #Get intensity values of those peptidoforms
             z <- assay(ptm_sub)
             z <- filter(as.data.frame(z), rowSums(is.na(z) | z==0) != ncol(z))
@@ -367,7 +369,7 @@ server <- (function(input, output, session) {
           })
           #Then we get the intensity assay on ptm level
           ptm_x_assay <- t(ptm_x_assay)
-
+          
           #Filter out ptms that have too many missing values
           filtering <- (rowSums(ptm_x_assay != 0, na.rm=TRUE)) > 0 &
             (rowSds(ptm_x_assay, na.rm=TRUE) > 1e-4) &
