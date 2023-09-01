@@ -1,4 +1,4 @@
-# PeptidoformVisualisation
+# msqrob2PTMGUI
 R package for launching shiny app to perform differential PTM abundance and usage analysis.
 
 # The package
