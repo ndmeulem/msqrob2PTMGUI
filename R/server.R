@@ -1079,20 +1079,31 @@ server <- (function(input, output, session) {
     x_axis3 <- metaReactive({..(input$x_axis3)}, varname = "x_axis3")
 
     output$report <- downloadHandler(
+      print(intensityDatapath()),
       filename = function() {
         paste0(input$project_name,"-report-", gsub(" |:","-",Sys.time()),".zip")
       },
       content = function(file) {
         file.copy(from = intensityDatapath(), to = "intensityFile.txt", overwrite = TRUE)
         file.copy(from = annotationDatapath(), to = "annotationFile.csv", overwrite = TRUE)
-        file.copy(from = proteinDatapath(), to = "intensity_nonenriched.txt", overwrite = TRUE)
-
+        if(protein_included()==T){
+          file.copy(from = proteinDatapath(), to = "intensity_nonenriched.txt", overwrite = TRUE)
+        }
+        
+        if(protein_included()==T){
         inputfiles <- expandChain(
           quote({
             intensityFile <- "intensityFile.txt"
             annotationFile <- "annotationFile.csv"
             proteinFile <- "intensity_nonenriched.txt"
-          }))
+          }))}
+        else if (protein_included()==F){
+          inputfiles <- expandChain(
+            quote({
+              intensityFile <- "intensityFile.txt"
+              annotationFile <- "annotationFile.csv"
+            }))}
+
         inputparameters <- expandChain(
           invisible(protein_included()),
           invisible(input_example()),
@@ -1131,21 +1142,39 @@ server <- (function(input, output, session) {
           invisible(x_axis3())
         )
 
-        buildRmdBundle(
-          system.file("data/Report.Rmd",package="msqrob2PTMGUI"),
-          file,
-          list(
-            inputfiles = inputfiles,
-            inputparameters = inputparameters,
-            preprocessing = preprocessing,
-            summarization = summarization,
-            model = model,
-            inference = inference,
-            report = report
-          ),
-          render=TRUE,
-          include_files = c("intensityFile.txt",'annotationFile.csv',"intensity_nonenriched.txt")
-        )
+        if(protein_included()==T){
+          buildRmdBundle(
+            system.file("data/Report.Rmd",package="msqrob2PTMGUI"),
+            file,
+            list(
+              inputfiles = inputfiles,
+              inputparameters = inputparameters,
+              preprocessing = preprocessing,
+              summarization = summarization,
+              model = model,
+              inference = inference,
+              report = report
+            ),
+            render=TRUE,
+            include_files = c("intensityFile.txt",'annotationFile.csv',"intensity_nonenriched.txt")
+          )}
+        else if (protein_included()==F){
+          buildRmdBundle(
+            system.file("data/Report.Rmd",package="msqrob2PTMGUI"),
+            file,
+            list(
+              inputfiles = inputfiles,
+              inputparameters = inputparameters,
+              preprocessing = preprocessing,
+              summarization = summarization,
+              model = model,
+              inference = inference,
+              report = report
+            ),
+            render=TRUE,
+            include_files = c("intensityFile.txt",'annotationFile.csv')
+            )}
+
       })
 
 })
