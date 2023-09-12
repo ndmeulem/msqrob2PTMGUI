@@ -1079,18 +1079,21 @@ server <- (function(input, output, session) {
     x_axis1 <- metaReactive({..(input$x_axis1)}, varname = "x_axis1")
     x_axis2 <- metaReactive({..(input$x_axis2)}, varname ="x_axis2")
     x_axis3 <- metaReactive({..(input$x_axis3)}, varname = "x_axis3")
-
-    output$report <- downloadHandler(
-      print(intensityDatapath()),
-      filename = function() {
-        paste0(input$project_name,"-report-", gsub(" |:","-",Sys.time()),".zip")
-      },
-      content = function(file) {
-        file.copy(from = intensityDatapath(), to = "intensityFile.txt", overwrite = TRUE)
-        file.copy(from = annotationDatapath(), to = "annotationFile.csv", overwrite = TRUE)
-        if(protein_included()==T){
-          file.copy(from = proteinDatapath(), to = "intensity_nonenriched.txt", overwrite = TRUE)
-        }
+    
+    #report <- reactiveValues(filepath = NULL) #This creates a short-term storage location for a filepath
+    variables$filepath = NULL
+    
+    observeEvent(input$generate, {
+     
+      # filename = function() {
+      #   paste0(input$project_name,"-report-", gsub(" |:","-",Sys.time()),".zip")
+      # }
+      # content = function(file) {
+      #   file.copy(from = intensityDatapath(), to = "intensityFile.txt", overwrite = TRUE)
+      #   file.copy(from = annotationDatapath(), to = "annotationFile.csv", overwrite = TRUE)
+      #   if(protein_included()==T){
+      #     file.copy(from = proteinDatapath(), to = "intensity_nonenriched.txt", overwrite = TRUE)
+      #   }
         
         if(protein_included()==T){
         inputfiles <- expandChain(
@@ -1143,11 +1146,13 @@ server <- (function(input, output, session) {
           invisible(x_axis2()),
           invisible(x_axis3())
         )
+        
+        tmp_file <- paste0(tempfile(), ".zip") #Creating the temp where the .pdf is going to be stored
 
         if(protein_included()==T){
           buildRmdBundle(
             system.file("data/Report.Rmd",package="msqrob2PTMGUI"),
-            file,
+            tmp_file,
             list(
               inputfiles = inputfiles,
               inputparameters = inputparameters,
@@ -1163,7 +1168,7 @@ server <- (function(input, output, session) {
         else if (protein_included()==F){
           buildRmdBundle(
             system.file("data/Report.Rmd",package="msqrob2PTMGUI"),
-            file,
+            tmp_file,
             list(
               inputfiles = inputfiles,
               inputparameters = inputparameters,
@@ -1175,8 +1180,42 @@ server <- (function(input, output, session) {
             ),
             render=TRUE,
             include_files = c("intensityFile.txt",'annotationFile.csv')
-            )}
-
+          )}
+        
+        variables$filepath <- tmp_file #Assigning in the temp file where the .pdf is located to the reactive file created above
+        print(variables$filepath)
+        
       })
+    
+    # # Hide download button until report is generated
+    # output$reportbuilt <- reactive({
+    #   return(!is.null(report$filepath))
+    # })
+    # outputOptions(output, 'reportbuilt', suspendWhenHidden= FALSE)
+    # 
+    #Download report  
+    output$DownloadReport <- downloadHandler(
+      
+      # This function returns a string which tells the client
+      # browser what name to use when saving the file.
+      filename = function() {
+        paste0(input$project_name,"-report-", gsub(" |:","-",Sys.time()),".zip")
+      },
+      
+      # This function should write data to a file given to it by
+      # the argument 'file'.
+      content = function(file) {
+        
+        file.copy(getDataPath(variables$filepath), file, overwrite = T)
+        
+      }
+    )
+   #outputOptions(output, 'download', suspendWhenHidden= FALSE)
+    
+    output$downloadButtonDownloadReport <- renderUI({
+      if(!is.null(variables$filepath)) {
+        downloadButton("DownloadReport", "Download Report")}
+    })
+
 
 })

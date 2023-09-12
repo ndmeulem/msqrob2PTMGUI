@@ -375,7 +375,8 @@ ui <- function() {
           ), type = "markdown", content = "report"),
         fluidRow(
           column(width = 6,
-                 downloadButton("report", "Generate report"))
+                 actionButton("generate", "Generate Report"),
+                 htmlOutput("downloadButtonDownloadReport"))
         )
 
       )
