@@ -1080,17 +1080,11 @@ server <- (function(input, output, session) {
     x_axis2 <- metaReactive({..(input$x_axis2)}, varname ="x_axis2")
     x_axis3 <- metaReactive({..(input$x_axis3)}, varname = "x_axis3")
     
-    #report <- reactiveValues(filepath = NULL) #This creates a short-term storage location for a filepath
+    
     variables$filepath = NULL
     
     observeEvent(input$generate, {
-     
-      # filename = function() {
-      #   paste0(input$project_name,"-report-", gsub(" |:","-",Sys.time()),".zip")
-      # }
-      # content = function(file) {
-      print(intensityDatapath())
-      print(annotationDatapath())
+      
          file.copy(from = intensityDatapath(), to = "intensityFile.txt", overwrite = TRUE)
          file.copy(from = annotationDatapath(), to = "annotationFile.csv", overwrite = TRUE)
          if(protein_included()==T){
@@ -1149,10 +1143,10 @@ server <- (function(input, output, session) {
           invisible(x_axis3())
         )
         
-        tmp_file <- getDataPath(paste0(tempfile(), ".zip"))#Creating the temp where the .pdf is going to be stored
-        if(Sys.info()['sysname']=="Windows"){
-          tmp_file <- getDataPath(paste0(tempfile(tmpdir = system.file(package="msqrob2PTMGUI")), ".zip"))
-        }
+        tmp_file <- getDataPath(paste0(tempfile(), ".zip"))#Creating the temp where the .zip is going to be stored
+        # if(Sys.info()['sysname']=="Windows"){
+        #   tmp_file <- getDataPath(paste0(tempfile(tmpdir = system.file(package="msqrob2PTMGUI")), ".zip"))
+        # }
         
         if(protein_included()==T){
           buildRmdBundle(
@@ -1187,35 +1181,24 @@ server <- (function(input, output, session) {
             include_files = c("intensityFile.txt",'annotationFile.csv')
           )}
         
-        variables$filepath <- tmp_file #Assigning in the temp file where the .pdf is located to the reactive file created above
+        variables$filepath <- tmp_file #Assigning in the temp file where the .zip is located to the reactive file created above
         print(variables$filepath)
         
       })
     
-    # # Hide download button until report is generated
-    # output$reportbuilt <- reactive({
-    #   return(!is.null(report$filepath))
-    # })
-    # outputOptions(output, 'reportbuilt', suspendWhenHidden= FALSE)
-    # 
     #Download report  
     output$DownloadReport <- downloadHandler(
-      
-      # This function returns a string which tells the client
-      # browser what name to use when saving the file.
+
       filename = function() {
         paste0(input$project_name,"-report-", gsub(" |:","-",Sys.time()),".zip")
       },
       
-      # This function should write data to a file given to it by
-      # the argument 'file'.
       content = function(file) {
         
         file.copy(getDataPath(variables$filepath), file, overwrite = T)
         
       }
     )
-   #outputOptions(output, 'download', suspendWhenHidden= FALSE)
     
     output$downloadButtonDownloadReport <- renderUI({
       if(!is.null(variables$filepath)) {
