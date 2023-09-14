@@ -1149,7 +1149,7 @@ server <- (function(input, output, session) {
           invisible(x_axis3())
         )
         
-        tmp_file <- paste0(tempfile(), ".zip") #Creating the temp where the .pdf is going to be stored
+        tmp_file <- getDataPath(paste0(tempfile(), ".zip"))#Creating the temp where the .pdf is going to be stored
 
         if(protein_included()==T){
           buildRmdBundle(
