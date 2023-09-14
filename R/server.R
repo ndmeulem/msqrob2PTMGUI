@@ -1150,7 +1150,10 @@ server <- (function(input, output, session) {
         )
         
         tmp_file <- getDataPath(paste0(tempfile(), ".zip"))#Creating the temp where the .pdf is going to be stored
-
+        if(Sys.info()['sysname']=="Windows"){
+          tmp_file <- getDataPath(paste0(tempfile(tmpdir = system.file(package="msqrob2PTMGUI")), ".zip"))
+        }
+        
         if(protein_included()==T){
           buildRmdBundle(
             system.file("data/Report.Rmd",package="msqrob2PTMGUI"),
