@@ -1089,6 +1089,8 @@ server <- (function(input, output, session) {
       #   paste0(input$project_name,"-report-", gsub(" |:","-",Sys.time()),".zip")
       # }
       # content = function(file) {
+      print(intensityDatapath())
+      print(annotationDatapath())
          file.copy(from = intensityDatapath(), to = "intensityFile.txt", overwrite = TRUE)
          file.copy(from = annotationDatapath(), to = "annotationFile.csv", overwrite = TRUE)
          if(protein_included()==T){
