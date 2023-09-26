@@ -858,7 +858,7 @@ server <- (function(input, output, session) {
                               ifelse(rowData(pe2[[result_assay]])[[contrasts[1]]][selected_rows,]$adjPval <= input$significancelevel,
                                       "red", "black")),
                    cex = 2.5)
-
+     
       p1_ly <- ggplotly(p1) %>%
         layout(showlegend = F) %>%
         config(toImageButtonOptions = list(
@@ -868,10 +868,11 @@ server <- (function(input, output, session) {
       output$volcano <- renderPlotly({p1_ly})
       #print significance table corresponding peptidoforms in case of ptms
       if(input$summarisation == "yes"){
-        pepform_table <- rowData(pe2[["peptideLogNorm"]])[grepl(selected_feature(),
+        pepform_table <- rowData(pe2[["peptideLogNorm"]])[[contrasts]][
+                              grepl(selected_feature(),
                               rowData(pe2[["peptideLogNorm"]])$ptm, fixed = T),] %>%
-                        as.data.frame() %>% select(starts_with(contrasts[1])) %>%
-                        arrange(!!sym(paste(contrasts[1], "adjPval", sep = ".")))
+                        as.data.frame() %>% 
+                        arrange(!!sym(grep("adjPval", colnames(.), value = T)))
 
         output$significanceTablePepforms <- DT::renderDataTable(server = FALSE, {
           DT::datatable(pepform_table,
@@ -908,8 +909,9 @@ server <- (function(input, output, session) {
 
     output$lineplot_feature <- renderPlotly({
       #add error handling for zero or two or more features selected
-
+      
       #Get dataset with selected rows
+      
       pe2 <- variables$pe2
       sign_table <- variables$sign_table
       feature_selected <- sign_table[clicked_feature(),] %>% rownames()
@@ -977,12 +979,11 @@ server <- (function(input, output, session) {
         if(result_assay == "ptmRel"){
           df_plot <- rbind(protein, pepform, pepform_norm, ptm_df)
           sign_pepforms <- variables$pepform_table %>% filter(
-            !!sym(paste(gsub("\\s*=\\s*0", "", variables$contrasts[1]), "adjPval",
-                        sep = ".")) <= input$significancelevel
+            adjPval <= input$significancelevel
           ) %>% rownames %>% paste("norm")
-          df_plot[df_plot$sequence==sign_pepforms,]$type = "pepform - norm - significant"
+          df_plot[df_plot$sequence%in%sign_pepforms,]$type = "pepform - norm - significant"
         } else {df_plot <- rbind(protein, pepform, pepform_norm)}
-
+        
         colH <- colData(pe2)
 
         for (col in variables$idcols){
