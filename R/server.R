@@ -110,7 +110,7 @@ server <- (function(input, output, session) {
         req(input$data$name, input$metadata$name, input$intensityIdentifier)
         variables$protein_included <- FALSE
         variables$input_example <- FALSE
-
+        
         df <- read.delim(input$data$datapath, skip = input$skip,
                          sep = input$separator, header = T)
         df$peptidoform <- paste(df[,input$sequenceColumn],
@@ -249,6 +249,7 @@ server <- (function(input, output, session) {
       pe2 <- variables$pe
       if(is.character(input$proteindata$datapath)){
       prot <- variables$prot}
+      
 
       #logtransformation
       if (input$logTransform != "none"){
@@ -466,6 +467,7 @@ server <- (function(input, output, session) {
                  input$x_axis}, {
 
         req(input$x_axis)
+        
 
         #Get data for particular protein
         proteinpe <- variables$pe2[["peptideLogNorm"]][grepl(input$protein,
@@ -493,6 +495,7 @@ server <- (function(input, output, session) {
             rep(paste(rowData(proteinpe)[,input$sequenceColumn],
                       rowData(proteinpe)[,input$modificationsColumn],sep="_"),
                       length(unique(df$biorepeat)))
+                      #length(unique(df$colname))
         #arrange according to input$x_axis
         df <- as.data.frame(df)
         df <- df[order(df[,input$x_axis]),]
@@ -500,6 +503,7 @@ server <- (function(input, output, session) {
         #Save dataset
         variables$proteindf <- df
         }, ignoreInit = TRUE)
+
 
     #Visualisation
     #Plot data table: wide format so that users can easily see the features
@@ -523,8 +527,12 @@ server <- (function(input, output, session) {
                 modifier = list(page="all")
               ))
             ))
-            ) %>% DT::formatStyle(names(proteindf_wide), lineHeight="80%")
+            ) %>% DT::formatStyle(names(proteindf_wide), lineHeight="80%") %>%
+          DT::formatRound(2:ncol(proteindf_wide),
+                          digits = input$significant_digits)
     })
+    
+   
 
     #If user clicks deselect button -> all selected rows are deselected
     proxy = dataTableProxy('proteinDataTable')
@@ -675,7 +683,7 @@ server <- (function(input, output, session) {
     output$designmatrix <- renderUI({
       lapply(1:length(design()[[2]]),
              function(j){
-               renderPlot(design()[[2]][[j]])
+               renderPlot(design()[[2]][[j]], height = 650)
              })
     })
 
@@ -989,7 +997,9 @@ server <- (function(input, output, session) {
         for (col in variables$idcols){
           df_plot[as.character(col)] = as.factor(colH[df_plot$run, col])
         }
+        
         #add id column
+        
         df_plot <- df_plot %>% as_tibble() %>%
           tidyr::unite("id", all_of(variables$idcols),sep="_", remove = F)
 
@@ -997,11 +1007,16 @@ server <- (function(input, output, session) {
         colour_values <- c("pepform - norm" = "gray72",
                            "pepform - norm - significant" = "pink",
                            "protein" = "dodgerblue2", "ptm" = "seagreen3",
-                           "pepform -log" = "grey44")}
+                           "pepform -log" = "grey44")
+        alpha_values <- c("pepform - norm" = 0.3,
+                           "pepform - norm - significant" = 0.5,
+                           "protein" = 1, "ptm" = 1,
+                           "pepform -log" = 0.3)}
         else{
           colour_values <- c("pepform - norm" = "seagreen3",
                              "protein" = "dodgerblue2",
-                             "pepform -log" = "palevioletred2")}
+                             "pepform -log" = "palevioletred2")
+          alpha_values <-c(1,1,1)}
 
         if(length(variables$idcols) == 1 ){
           df_plot <- df_plot %>% arrange(!!sym(input$x_axis1))}
@@ -1016,10 +1031,11 @@ server <- (function(input, output, session) {
 
         p1 <-  df_plot %>% ggplot() +
           geom_line(aes(x = id, y = LogIntensities, group = sequence,
-                        color = type), size = 1) +
+                        color = type, alpha = type), size = 1) +
           geom_point(aes(x = id, y = LogIntensities , group = sequence,
-                         color = type), size = 2.5) +
+                         color = type, alpha = type), size = 2.5) +
           scale_colour_manual(values = colour_values)  +
+          scale_alpha_manual(values = alpha_values) +
           labs(title = feature_selected, x = "BioReplicate", y = "LogIntensity") +
           theme_bw() +
            theme(axis.text.x = element_text(angle = 60, hjust=1))

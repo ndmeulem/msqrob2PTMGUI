@@ -31,3 +31,8 @@ To launch shiny app, use:
 ```
 launchmsqrob2PTMGUI()
 ```
+
+# msqrob2 resources
+On the following webpage, some examples about different experimental designs are included: https://statomics.github.io/msqrob2Examples/index.html. 
+Here, users can see how to formulate the model formula and contrasts for these designs.
+

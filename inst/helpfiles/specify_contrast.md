@@ -3,3 +3,7 @@ Null hypothesis specification
 
 Here, the null hypothesis needs to be formulated in terms of a (linear combination) of the model parameters. The names of the model parameters  are indicated to the left from the Null hypothesis field. They are also illustrated in the Model tab by the visualisation of the design. In this visualisation, every group mean of the experimental design is given. 
 A **contrast** is the difference between group means, which is typically a linear combination of the slope terms in the linear model. Suppose for instance that the model consists of one design variable named ‘condition’, which consists of two levels A and B. In R, group A will be the reference class (it comes first alphabetically) and its group mean will be modelled with the intercept of the linear model: ‘(Intercept)’. The group mean for group B will then be modelled using the sum of the intercept and its corresponding slope named ‘conditionB’: ‘(Intercept)+conditionB’. If the intensities are log2 transformed, the average log2 fold change between group A and B will then be equal to the slope: ‘conditionB’ ((Intercept + conditionB) - Intercept). Assessing if the log2 FC is equal to 0, involves the following null hypothesis: **conditionB = 0**.
+
+Multiple testing correction
+============================
+To adjust the pvalues for multiple testing, the Benjamini-Hochberg method for false discovery rate control is employed.

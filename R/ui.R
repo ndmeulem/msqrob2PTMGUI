@@ -209,7 +209,9 @@ ui <- function() {
                                              "relative abundance (center mean)",
                                              "relative abundance (center median)"),
                              choiceValues = c("none","center.mean", "center.median")),
-                       type = "markdown", content = "normalisationfile")
+                       type = "markdown", content = "normalisationfile"),
+                numericInput(inputId = "significant_digits", 
+                             label = "how many digits to display", value=3, min=1)
                 ),
             #Data table
             column(width = 9,
@@ -275,7 +277,8 @@ ui <- function() {
       #Add row to visualise design matrix
         fluidRow(
           column(width = 11,
-          tags$div(tags$h4("Visualise design")),
+          helper(tags$div(tags$h4("Visualise design")),
+                        type = "markdown", content = "visualise_design"),       
           uiOutput("designmatrix", width = "100%")
         ))
 

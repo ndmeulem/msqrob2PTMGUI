@@ -19,3 +19,8 @@ This is the same as:
 
 - Random effects can be included:
 **~variable1 + (1|randomvariable2)**
+
+Robust regression
+===================
+
+When selecting this option, robust regression is performed, if not an OLS fit is performed. Robust regression using an M estimator is used to make the regression more robust to outliers, by adding weights that will down-weigh observations with high residuals. The weights employed here are Huber weights.
